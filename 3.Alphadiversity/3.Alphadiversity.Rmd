@@ -1,0 +1,307 @@
+---
+title: "Alphadiversity analysis"
+author: "Jipeng Luo"
+date: "2026-11-02"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+rm(list=ls())
+getwd()
+setwd("~/GitHub/3.Alphadiversity")
+```
+
+## Load packages and functions
+
+```{r}
+library(vegan)
+library(dplyr)
+library(lmerTest)
+library(lme4)
+```
+
+# Import metadata file, and taxonomic and functional data
+# It is recommended to perform smoothing analysis using integer abundance data
+
+```{r}
+design <- read.csv("./data/Metadata.csv", row.names=1, header = T)
+head(design)
+spe1 <- read.csv("./data/KOs.count.csv", row.names=1, header = T)
+spe1 <- read.csv("./data/Species.count.csv", row.names=1, header = T)
+spe1[1:5,1:5]
+spe <- t(spe1[,rownames(design)]) %>% as.data.frame()
+spe <- spe[,colSums(spe)>0]
+```
+
+
+
+```{r}
+# Observed species
+S.obs <- function(x = ""){
+  rowSums(x > 0) * 1
+}
+
+# Identify the minimum sequencing depth
+spe.S <- S.obs(spe)
+min.N <- min(rowSums(spe))  
+spe.int <- round(spe, 0)
+
+# Rarefaction;  It takes time to calculate.
+rarefied <- rrarefy(spe.int, sample = min.N) 
+rowSums(rarefied)
+
+# Plot rarefaction curve
+rarecurve(x = rarefied, step = 100, col = "blue", cex = 0.6, las = 1)
+abline(0, 1, col = 'red')             
+text(1500, 1500, "1:1", pos = 2, col = 'red')
+
+# Export rarefied abundance table for α-diversity analysis
+write.csv(rarefied, file = "./output/Species.count_rarefied.csv")
+write.csv(rarefied, file = "./output/KOs.count_rarefied.csv")
+```
+
+# Calculate taxonomic α-diversity and perform statistical analysis
+
+```{r}
+spe_trans <- read.csv("./output/Species.count_rarefied.csv", header = T, row.names = 1)
+
+# Shannon diversity
+Shannon <- diversity(spe_trans) 
+Shannon
+
+# Within-group mean
+tapply(Shannon, design$Irrigation, mean)
+
+# Linear mixed effect model to analyze the effect of irrigation, with state included as random factor
+anova(lmer(Shannon ~ Irrigation + (1|State), data = design))  # F = 11.50, p = 0.0011
+
+
+# Simpson
+Inv_Simpson <- diversity(spe_trans, "inv")
+Inv_Simpson
+# Within-group mean
+tapply(Inv_Simpson, design$Irrigation, mean)
+# Linear mixed effect model to analyze the effect of irrigation, with state included as random factor
+anova(lmer(Inv_Simpson ~ Irrigation + (1|State), data = design))  # F = 14.95, p = 0.0001
+
+
+# Richness
+S <- specnumber(spe_trans)
+S
+
+# Within-group mean
+tapply(S, design$Irrigation, mean)
+# Linear mixed effect model to analyze the effect of irrigation, with state included as random factor
+anova(lmer(S ~ Irrigation + (1|State), data = design))  # F = 0.273, p = 0.6033
+
+
+# Pielou_evenness
+Pielou_evenness <- Shannon/log(S)
+Pielou_evenness
+
+# Within-group mean
+tapply(Pielou_evenness, design$Irrigation, mean)
+# Linear mixed effect model to analyze the effect of irrigation, with state included as random factor
+anova(lmer(Pielou_evenness ~ Irrigation + (1|State), data = design))  # F = 14.05, p = 0.0004
+
+
+# Simpson_evenness
+Simpson_evenness <- Inv_Simpson/S
+Simpson_evenness
+
+# Within-group mean
+tapply(Simpson_evenness, design$Irrigation, mean)
+# Linear mixed effect model to analyze the effect of irrigation, with state included as random factor
+anova(lmer(Simpson_evenness ~ Irrigation + (1|State), data = design))  # F = 19.56,  p = 3.393e-05
+
+# Export the diversity indexes calculated
+report = cbind(Shannon, Inv_Simpson, S, Pielou_evenness, Simpson_evenness)
+head(report)
+write.csv(report, file = "./output/Species_alpha_diversity_Rarefied.csv")
+```
+
+
+# Calculate functional α-diversity and perform statistical analysis
+
+```{r}
+spe_trans <- read.csv("./output/KOs.count_rarefied.csv", header = T, row.names = 1)
+
+# Shannon diversity
+Shannon <- diversity(spe_trans)
+Shannon
+# Export .csv file
+#write.csv(as.data.frame(Shannon), file="Shannon_rare_species.csv")
+
+# Within-group mean
+tapply(Shannon, design$Irrigation, mean)
+
+# Linear mixed effect model to analyze the effect of irrigation
+anova(lmer(Shannon ~ Irrigation + (1|State), data = design))  # F = 5.21, p = 0.0254
+
+
+# Simpson
+Inv_Simpson <- diversity(spe_trans, "inv")
+Inv_Simpson
+
+tapply(Inv_Simpson, design$Irrigation, mean)
+anova(lmer(Inv_Simpson ~ Irrigation + (1|State), data = design))  # F = 3.76, p = 0.056
+
+
+# Richness
+S <- specnumber(spe_trans)
+S
+
+tapply(S, design$Irrigation, mean)
+anova(lmer(S ~ Irrigation + (1|State), data = design))  # F = 0.002, p = 0.967
+
+
+# Pielou_evenness
+Pielou_evenness <- Shannon/log(S)
+Pielou_evenness
+
+tapply(Pielou_evenness, design$Irrigation, mean)
+anova(lmer(Pielou_evenness ~ Irrigation + (1|State), data = design))  # F = 2.72, p = 0.1033
+
+
+# Simpson_evenness
+Simpson_evenness <- Inv_Simpson/S
+Simpson_evenness
+
+tapply(Simpson_evenness, design$Irrigation, mean)
+anova(lmer(Simpson_evenness ~ Irrigation + (1|State), data = design))  # F = 1.945, p = 0.1674
+
+# Export the diversity indexes calculated
+report = cbind(Shannon, Inv_Simpson, S, Pielou_evenness, Simpson_evenness)
+head(report)
+write.csv(report, file = "./output/KOs_alpha_diveristy_Rarefied.csv")
+```
+
+
+# Plot taxonomic alpha-diversity
+
+```{r}
+library(ggplot2)
+design <- read.csv("./data/Metadata.csv", header = T)
+data1 <- read.csv("./output/Species_alpha_diversity_Rarefied.csv", header = T, row.names = 1)
+data <- cbind(design, data1)
+
+# Set up figure parameters
+colors <- c("irrigated"="#4169B2", "non-irrigated"="#BB2BA0")
+theme.plot <- theme(axis.title = element_text(colour = "black", size = 17),
+                    axis.text.x = element_text(colour= "black", size= 17, angle= 35, hjust = 1),
+                    axis.text.y = element_text(colour = "black", size = 17),
+                    legend.position = "NULL",
+                    panel.border = element_rect(color="black", size=1),
+                    panel.grid = element_blank())
+
+# Shannon diversity
+range(data$Shannon)
+theme_set(theme_bw())
+p1 <- ggplot(data, aes(x= Irrigation, y= Shannon, fill = Irrigation)) +
+  geom_violin(linewidth=0.5, size=0.2, alpha=0.7, color = "black") +
+  geom_boxplot(alpha= 1, width= 0.15, fill= "white") +
+  geom_jitter(size= 1.4, width = 0.07, alpha= 0.4) +
+  scale_fill_manual(values = colors) +
+  theme_bw() +
+  theme.plot + 
+  xlab(NULL) + ylab("Shannon diversity") + 
+  scale_y_continuous(limits = c(3.9, 4.65), breaks =seq(3.9, 4.65, 0.2))
+p1
+ggsave("./output/Shannon_Taxonomy.pdf", p1, width = 3.5, height = 4)
+
+```
+
+# Richness
+
+```{r}
+range(data$S)
+p2 <- ggplot(data, aes(x= Irrigation, y= S, fill= Irrigation)) +
+  geom_violin(linewidth= 0.5, size=0.2, alpha= 0.7, color = "black") +
+  geom_boxplot(alpha= 1, width= 0.15, fill= "white") +
+  geom_jitter(size= 1.4, width = 0.07, alpha= 0.4) +
+  scale_fill_manual(values = colors) +
+  theme_bw() +
+  theme.plot + 
+  xlab(NULL) + ylab("Richness") + 
+  scale_y_continuous(limits = c(6000, 8600), breaks = seq(6000, 8600, 500))
+p2
+ggsave("./output/Richness_Taxonomy.pdf", p2, width = 3.5, height = 4)
+
+```
+
+# Pielou_evenness
+
+```{r}
+range(data$Pielou_evenness)
+p3 <- ggplot(data, aes(x= Irrigation, y= Pielou_evenness, fill= Irrigation)) +
+  geom_violin(linewidth= 0.5, size=0.2, alpha=0.7, color = "black") +
+  geom_boxplot(alpha= 1, width= 0.15, fill= "white") +
+  geom_jitter(size= 1.4, width = 0.07, alpha= 0.4) +
+  scale_fill_manual(values = colors) +
+  theme_bw() +
+  theme.plot + 
+  xlab(NULL) + ylab("Pielou evenness") + 
+  scale_y_continuous(limits = c(0.445, 0.515), breaks = seq(0.445, 0.515, 0.02))
+p3
+ggsave("./output/Pielou_evenness_Taxonomy.pdf", p3, width = 3.5, height = 4)
+```
+
+
+# Plot functional alpha-diversity
+
+```{r}
+data2 <- read.csv("./output/KOs_alpha_diveristy_Rarefied.csv", header = T, row.names = 1)
+data <- cbind(design, data2)
+
+# Shannon diversity
+range(data$Shannon)
+p4 <- ggplot(data, aes(x= Irrigation, y= Shannon, fill = Irrigation)) +
+  geom_violin(linewidth=0.5, size=0.2, alpha=0.7, color = "black") +
+  geom_boxplot(alpha= 1, width= 0.15, fill= "white") +
+  geom_jitter(size= 1.4, width = 0.07, alpha= 0.4) +
+  scale_fill_manual(values = colors) +
+  theme_bw() +
+  theme.plot + 
+  xlab(NULL) + ylab("Shannon diversity") + 
+  scale_y_continuous(limits = c(7.49, 7.61), breaks =seq(7.49, 7.61, 0.03))
+p4
+ggsave("./output/Shannon_Function.pdf", p4, width = 3.5, height = 4)
+
+```
+
+# Observed species
+
+```{r}
+range(data$S)
+p5 <- ggplot(data, aes(x= Irrigation, y= S, fill= Irrigation)) +
+  geom_violin(linewidth= 0.5, size=0.2, alpha= 0.7, color = "black") +
+  geom_boxplot(alpha= 1, width= 0.15, fill= "white") +
+  geom_jitter(size= 1.4, width = 0.07, alpha= 0.4) +
+  scale_fill_manual(values = colors) +
+  theme_bw() +
+  theme.plot + 
+  xlab(NULL) + ylab("Richness") + 
+  scale_y_continuous(limits = c(6770, 7900), breaks = seq(6770, 7900, 500))
+p5
+ggsave("./output/Richness_Function.pdf", p5, width = 3.5, height = 4)
+```
+
+# Pielou_evenness
+
+```{r}
+range(data$Pielou_evenness)
+p6 <- ggplot(data, aes(x= Irrigation, y= Pielou_evenness, fill= Irrigation)) +
+  geom_violin(linewidth= 0.5, size=0.2, alpha=0.7, color = "black") +
+  geom_boxplot(alpha= 1, width= 0.15, fill= "white") +
+  geom_jitter(size= 1.4, width = 0.07, alpha= 0.4) +
+  scale_fill_manual(values = colors) +
+  theme_bw() +
+  theme.plot + 
+  xlab(NULL) + ylab("Pielou evenness") + 
+  scale_y_continuous(limits = c(0.84, 0.863), breaks = seq(0.84, 0.863, 0.01))
+p6
+ggsave("./output/Pielou evenness_Function.pdf", p6, width = 3.5, height = 4)
+```
+
+
+```{r}
